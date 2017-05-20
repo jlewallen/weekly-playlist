@@ -1,0 +1,3 @@
+export GOROOT=/c/Source/tools/go
+export PATH=$PATH:$GOROOT/bin
+export GOPATH=/c/Source/jlewallen/go

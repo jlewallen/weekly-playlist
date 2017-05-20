@@ -1,0 +1,17 @@
+[
+    {
+        "Id": "los_angeles",
+        "Region": "los angeles",
+        "VenueIds": [
+            "wiltern",
+            "elrey",
+            "theTroub",
+            "teragramla",
+            "thepalladium",
+            "thegreektheatre",
+            "EchoLA",
+            "thehihatla",
+            "shrinela"
+        ]
+    }
+]
