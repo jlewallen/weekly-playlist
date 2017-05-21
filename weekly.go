@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 )
 
 type Event struct {
@@ -47,14 +48,31 @@ func NewArtistResolver() (resolver *ArtistResolver) {
 	return resolver
 }
 
+func (resolver *ArtistResolver) SearchWithRetry(name string) (sr *spotify.SearchResult, err error) {
+	country := "US"
+	for {
+		sr, err = spotify.SearchOpt(name, spotify.SearchTypeArtist, &spotify.Options{Country: &country})
+		if err != nil {
+			if !strings.Contains(err.Error(), "rate") {
+				break
+			}
+
+			log.Printf("Throttled...")
+			time.Sleep(1 * time.Second)
+		} else {
+			break
+		}
+	}
+	return
+}
+
 func (resolver *ArtistResolver) GetSpotifyArtistsForGuess(depth int, artist *ArtistGuess) {
 	log.Printf("      |%s%s\n", strings.Repeat("  ", depth), artist.Name)
 
 	anyFound := false
 
 	if resolver.artistCache[artist.Name] == nil {
-		country := "US"
-		found, err := spotify.SearchOpt(artist.Name, spotify.SearchTypeArtist, &spotify.Options{Country: &country})
+		found, err := resolver.SearchWithRetry(artist.Name)
 		if err != nil {
 			log.Printf("Error:", err)
 		} else {
