@@ -205,11 +205,11 @@ func main() {
 	facebookSession, _ := AuthenticateFacebook()
 	regions := LoadRegions()
 
-	tracksAfter := []spotify.FullTrack{}
-
 	artistsResolver := NewArtistResolver()
 
 	for _, region := range regions {
+		tracksAfter := []spotify.FullTrack{}
+
 		for _, venueId := range region.VenueIds {
 			for _, event := range ProcessVenue(facebookSession, venueId) {
 				foundTracks := false
@@ -218,7 +218,7 @@ func main() {
 				for _, value := range artists {
 					artistTracks := artistsResolver.GetArtistTracks(*value)
 					tracksAfter = append(tracksAfter, artistTracks...)
-					log.Printf("   %d tracks '%s''\n", len(artistTracks), value.Name)
+					log.Printf("   %d tracks '%s'\n", len(artistTracks), value.Name)
 					foundTracks = true
 				}
 				if !foundTracks {
