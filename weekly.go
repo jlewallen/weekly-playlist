@@ -3,9 +3,10 @@ package main
 import (
 	mapset "github.com/deckarep/golang-set"
 	fb "github.com/huandu/facebook"
-	"fmt"
 	"github.com/zmb3/spotify"
+	"bytes"
 	"log"
+	"io"
 	"os"
 	"strings"
 )
@@ -49,6 +50,8 @@ func NewArtistResolver() (resolver *ArtistResolver) {
 func (resolver *ArtistResolver) GetSpotifyArtistsForGuess(depth int, artist *ArtistGuess) {
 	log.Printf("      |%s%s\n", strings.Repeat("  ", depth), artist.Name)
 
+	anyFound := false
+
 	if resolver.artistCache[artist.Name] == nil {
 		country := "US"
 		found, err := spotify.SearchOpt(artist.Name, spotify.SearchTypeArtist, &spotify.Options{Country: &country})
@@ -61,6 +64,7 @@ func (resolver *ArtistResolver) GetSpotifyArtistsForGuess(depth int, artist *Art
 						log.Printf("      #%s%s\n", strings.Repeat("  ", depth), item.Name)
 						resolver.artistCache[artist.Name] = &item
 						resolver.spotifyArtists[artist.Name] = &item
+						anyFound = true
 						break
 					}
 				}
@@ -70,8 +74,10 @@ func (resolver *ArtistResolver) GetSpotifyArtistsForGuess(depth int, artist *Art
 		resolver.spotifyArtists[artist.Name] = resolver.artistCache[artist.Name]
 	}
 
-	for _, child := range artist.Children {
-		resolver.GetSpotifyArtistsForGuess(depth+1, child)
+	if !anyFound {
+		for _, child := range artist.Children {
+			resolver.GetSpotifyArtistsForGuess(depth+1, child)
+		}
 	}
 }
 
@@ -165,14 +171,17 @@ func MapIds(ids []spotify.ID) (ifaces []interface{}) {
 }
 
 func main() {
-	f, err := os.OpenFile("weekly.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	logFile, err := os.OpenFile("weekly.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		log.Fatalf("Error opening file: %v", err)
 	}
-	defer f.Close()
+	defer logFile.Close()
 
-	log.SetOutput(os.Stdout)
-	// log.SetOutput(f)
+	buffer := new(bytes.Buffer)
+
+	multi := io.MultiWriter(logFile, buffer, os.Stdout)
+
+	log.SetOutput(multi)
 
 	spotifyClient, _ := AuthenticateSpotify()
 	facebookSession, _ := AuthenticateFacebook()
@@ -185,13 +194,20 @@ func main() {
 	for _, region := range regions {
 		for _, venueId := range region.VenueIds {
 			for _, event := range ProcessVenue(facebookSession, venueId) {
+				foundTracks := false
 				log.Printf("   '%s'\n", event.Name)
 				artists := artistsResolver.GetSpotifyArtists(event)
 				for _, value := range artists {
 					artistTracks := artistsResolver.GetArtistTracks(*value)
 					tracksAfter = append(tracksAfter, artistTracks...)
 					log.Printf("   %d tracks '%s''\n", len(artistTracks), value.Name)
+					foundTracks = true
 				}
+				if !foundTracks {
+					log.Printf("   NO TRACKS")
+				}
+
+				log.Printf("")
 			}
 		}
 
@@ -223,22 +239,14 @@ func main() {
 
 		for i := 0; i < len(idsToRemoveSlice); i += 50 {
 			batch := idsToRemoveSlice[i:min(i+50, len(idsToRemoveSlice))]
-			fmt.Printf("removing %v\n", len(batch))
 			spotifyClient.RemoveTracksFromPlaylist("jlewalle", playlist.ID, ToSpotifyIds(batch)...)
 		}
 
 		for i := 0; i < len(idsToAddSlice); i += 50 {
 			batch := idsToAddSlice[i:min(i+50, len(idsToAddSlice))]
-			fmt.Printf("adding %v\n", len(batch))
 			spotifyClient.AddTracksToPlaylist("jlewalle", playlist.ID, ToSpotifyIds(batch)...)
 		}
-
 	}
-}
 
-func min(a, b int) int {
-	if a <= b {
-		return a
-	}
-	return b
+	SendEmail(buffer.String())
 }
