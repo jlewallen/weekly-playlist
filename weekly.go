@@ -48,10 +48,10 @@ func NewArtistResolver() (resolver *ArtistResolver) {
 	return resolver
 }
 
-func (resolver *ArtistResolver) SearchWithRetry(name string) (sr *spotify.SearchResult, err error) {
+func (resolver *ArtistResolver) SearchWithRetry(spotifyClient *spotify.Client, name string) (sr *spotify.SearchResult, err error) {
 	country := "US"
 	for {
-		sr, err = spotify.SearchOpt(name, spotify.SearchTypeArtist, &spotify.Options{Country: &country})
+		sr, err = spotifyClient.SearchOpt(name, spotify.SearchTypeArtist, &spotify.Options{Country: &country})
 		if err != nil {
 			if !strings.Contains(err.Error(), "rate") {
 				break
@@ -66,13 +66,13 @@ func (resolver *ArtistResolver) SearchWithRetry(name string) (sr *spotify.Search
 	return
 }
 
-func (resolver *ArtistResolver) GetSpotifyArtistsForGuess(depth int, artist *ArtistGuess) {
+func (resolver *ArtistResolver) GetSpotifyArtistsForGuess(spotifyClient *spotify.Client, depth int, artist *ArtistGuess) {
 	log.Printf("      |%s%s\n", strings.Repeat("  ", depth), artist.Name)
 
 	anyFound := false
 
 	if resolver.artistCache[artist.Name] == nil {
-		found, err := resolver.SearchWithRetry(artist.Name)
+		found, err := resolver.SearchWithRetry(spotifyClient, artist.Name)
 		if err != nil {
 			log.Printf("Error:", err)
 		} else {
@@ -94,23 +94,23 @@ func (resolver *ArtistResolver) GetSpotifyArtistsForGuess(depth int, artist *Art
 
 	if !anyFound {
 		for _, child := range artist.Children {
-			resolver.GetSpotifyArtistsForGuess(depth+1, child)
+			resolver.GetSpotifyArtistsForGuess(spotifyClient, depth+1, child)
 		}
 	}
 }
 
-func (resolver *ArtistResolver) GetSpotifyArtists(event Event) (spotifyArtists map[string]*spotify.FullArtist) {
+func (resolver *ArtistResolver) GetSpotifyArtists(spotifyClient *spotify.Client, event Event) (spotifyArtists map[string]*spotify.FullArtist) {
 	resolver.spotifyArtists = make(map[string]*spotify.FullArtist)
 
-	resolver.GetSpotifyArtistsForGuess(0, event.Artists)
+	resolver.GetSpotifyArtistsForGuess(spotifyClient, 0, event.Artists)
 
 	spotifyArtists = resolver.spotifyArtists
 
 	return
 }
 
-func (resolver *ArtistResolver) GetArtistTracks(artist spotify.FullArtist) (tracks []spotify.FullTrack) {
-	topTracks, _ := spotify.GetArtistsTopTracks(artist.ID, "US")
+func (resolver *ArtistResolver) GetArtistTracks(spotifyClient *spotify.Client, artist spotify.FullArtist) (tracks []spotify.FullTrack) {
+	topTracks, _ := spotifyClient.GetArtistsTopTracks(artist.ID, "US")
 	if len(topTracks) > 3 {
 		tracks = topTracks[:3]
 	} else {
@@ -214,9 +214,9 @@ func main() {
 			for _, event := range ProcessVenue(facebookSession, venueId) {
 				foundTracks := false
 				log.Printf("   '%s'\n", event.Name)
-				artists := artistsResolver.GetSpotifyArtists(event)
+				artists := artistsResolver.GetSpotifyArtists(spotifyClient, event)
 				for _, value := range artists {
-					artistTracks := artistsResolver.GetArtistTracks(*value)
+					artistTracks := artistsResolver.GetArtistTracks(spotifyClient, *value)
 					tracksAfter = append(tracksAfter, artistTracks...)
 					log.Printf("   %d tracks '%s'\n", len(artistTracks), value.Name)
 					foundTracks = true

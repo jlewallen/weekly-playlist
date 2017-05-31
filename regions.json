@@ -1,5 +1,19 @@
 [
     {
+        "Id": "new_haven",
+        "Region": "new haven",
+        "VenueIds": [
+            "CollegeStreetMusicHall",
+            "thespacect",
+            "cafenineNH",
+            "barnewhaven",
+            "toadsplaceofficial",
+            "theouterspace",
+            "TheCapitolTheatre",
+            "Webster.Hall.NYC"
+        ]
+    },
+    {
         "Id": "los_angeles",
         "Region": "los angeles",
         "VenueIds": [
