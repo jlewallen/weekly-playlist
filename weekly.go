@@ -260,9 +260,16 @@ func main() {
 			spotifyClient.RemoveTracksFromPlaylist("jlewalle", playlist.ID, ToSpotifyIds(batch)...)
 		}
 
-		for i := 0; i < len(idsToAddSlice); i += 50 {
-			batch := idsToAddSlice[i:min(i+50, len(idsToAddSlice))]
-			spotifyClient.AddTracksToPlaylist("jlewalle", playlist.ID, ToSpotifyIds(batch)...)
+        orderedIdsToAdd := make([]spotify.ID, len(idsToAddSlice))
+        for _, i := range idsAfter {
+            if idsToAdd.Contains(i) {
+                orderedIdsToAdd = append(orderedIdsToAdd, i)
+            }
+        }
+
+		for i := 0; i < len(orderedIdsToAdd); i += 50 {
+			batch := orderedIdsToAdd[i:min(i+50, len(orderedIdsToAdd))]
+			spotifyClient.AddTracksToPlaylist("jlewalle", playlist.ID, batch...)
 		}
 	}
 
