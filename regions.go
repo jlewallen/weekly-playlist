@@ -12,10 +12,10 @@ type Region struct {
 	VenueIds []string
 }
 
-func LoadRegions() (regions []Region) {
-	log.Printf("Reading regions.json...")
+func LoadRegions(fileName string) (regions []Region) {
+	log.Printf("Reading %s...", fileName)
 
-	file, e := ioutil.ReadFile("./regions.json")
+	file, e := ioutil.ReadFile(fileName)
 	if e != nil {
 		log.Fatal("File error: %v\n", e)
 	}

@@ -1,0 +1,9 @@
+[
+    {
+        "Id": "los_angeles",
+        "Region": "los angeles",
+        "VenueIds": [
+            "theTroub"
+        ]
+    }
+]

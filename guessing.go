@@ -6,6 +6,7 @@ import (
 )
 
 type ArtistGuess struct {
+    Step string
 	Name string
 	Children []*ArtistGuess
 }
@@ -23,7 +24,7 @@ func FlattenArtist(root *ArtistGuess) (artists []*ArtistGuess) {
 func SwapAndsPermutation(guess *ArtistGuess) {
 	andSwapped := regexp.MustCompile("&").ReplaceAllString(guess.Name, "and")
 	if andSwapped != guess.Name {
-		newGuess := ArtistGuess{ Name: strings.TrimSpace(andSwapped) }
+		newGuess := ArtistGuess{ Step: "SAP", Name: strings.TrimSpace(andSwapped) }
 		if len(newGuess.Name) > 0 {
 			guess.Children = append(guess.Children, &newGuess)
 		}
@@ -31,23 +32,24 @@ func SwapAndsPermutation(guess *ArtistGuess) {
 }
 
 func SeparateMultipleArtistsPermutation(guess *ArtistGuess) {
-	moreNames := regexp.MustCompile("(?i)(?:\\\\w|w\\/|,\\s+|\\bAND\\b|\\bY\\b|&|:)").Split(guess.Name, -1)
+	moreNames := regexp.MustCompile("(?i)(?:\\\\w|,\\s+|\\s&\\s|\\bAND\\b|\\sY\\s|&|:|\\s\\+\\s)").Split(guess.Name, -1)
 	if len(moreNames) > 1 {
 		for _, name := range moreNames {
 			name = strings.TrimSpace(name)
 			if len(name) > 0 {
-				guess.Children = append(guess.Children, &ArtistGuess{ Name: name })
+				guess.Children = append(guess.Children, &ArtistGuess{ Step: "SMA", Name: name })
 			}
 		}
 	}
 }
 
 func InitialPermutation(guess *ArtistGuess) {
-	splitRe := regexp.MustCompile("(?i)(?:\\b\\\\w\\b|\\bW/\\b|,\\s+|\\b\\+ MORE\\b|\\sWITH\\sSPECIAL\\sGUEST\\s|\\bWITH\\b|\\bFEAT\\b|\\s+FT\\.?\\s+|\\bPRESENTS?\\b|\\bFEATURING\\b|\\||\\/\\/?)")
+	splitRe := regexp.MustCompile("(?i)(?:\\s\\\\w\\s|\\sw?\\/\\/?\\s|,\\s+|\\s\\+ MORE\\b|\\sWITH\\sSPECIAL\\sGUEST\\s|\\bWITH\\b|\\bFEAT\\b|\\s+FT\\.?\\s+|\\bPRESENTS?\\b|\\bFEATURING\\b|\\||presented\\sby\\s.+|:)")
 	split := splitRe.Split(guess.Name, -1)
+    // fmt.Printf("IP: %s %d\n", split, len(split))
 	if len(split) > 1 {
 		for _, substring := range split {
-			child := ArtistGuess{Name: strings.TrimSpace(substring)}
+			child := ArtistGuess{Step: "I", Name: strings.TrimSpace(substring)}
 			if len(child.Name) > 0 {
 				SwapAndsPermutation(&child)
 				SeparateMultipleArtistsPermutation(&child)
@@ -60,7 +62,7 @@ func InitialPermutation(guess *ArtistGuess) {
 func RemoveVenuePermutation(guess *ArtistGuess) {
 	anotherName := regexp.MustCompile("(?i)(\\s+AT\\s+.+)").ReplaceAllString(guess.Name, "")
 	if anotherName != guess.Name {
-		newGuess := ArtistGuess{ Name: anotherName }
+		newGuess := ArtistGuess{ Step: "RV", Name: anotherName }
 		InitialPermutation(&newGuess)
 		guess.Children = append(guess.Children, &newGuess)
 	}
@@ -73,13 +75,14 @@ func GuessArtistsForEvent(title string) (guess *ArtistGuess) {
 		"\\b(SOLD\\s+OUT\\s*!+)",
 		"\\b(SOLD\\s+OUT:)",
 		"^(SOLD\\s+OUT)",
-		"\\bLIVE (AT|@).+",
+		"\\bLIVE (IN|AT|@).+",
+        "& more\\!",
 		"\\|.+",
 		"\\(.+\\)",
 		"�",
 	}
 
-	guess = &ArtistGuess{Name: title}
+	guess = &ArtistGuess{Step: "", Name: title}
 
 	for _, pattern := range patternsToRemove {
 		r := regexp.MustCompile("(?i)" + pattern)
@@ -87,7 +90,7 @@ func GuessArtistsForEvent(title string) (guess *ArtistGuess) {
 	}
 
 	title = strings.TrimSpace(title)
-	cleaned := ArtistGuess{Name: title}
+	cleaned := ArtistGuess{Step: "C", Name: title}
 	InitialPermutation(&cleaned)
 	RemoveVenuePermutation(&cleaned)
 	guess.Children = append(guess.Children, &cleaned)
