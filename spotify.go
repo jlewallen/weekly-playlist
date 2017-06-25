@@ -1,12 +1,12 @@
 package main
 
 import (
-	"log"
-	"net/http"
 	"github.com/zmb3/spotify"
 	"golang.org/x/oauth2"
-	"time"
+	"log"
+	"net/http"
 	"os"
+	"time"
 )
 
 var (
@@ -71,7 +71,7 @@ func CompleteAuth(w http.ResponseWriter, r *http.Request) {
 	tokens.Spotify.AccessToken = token.AccessToken
 	tokens.Spotify.RefreshToken = token.RefreshToken
 	tokens.Spotify.Expiry = token.Expiry.Format("Mon Jan 2 15:04:05 -0700 MST 2006")
-	tokens.Spotify.TokenType = token.TokenType;
+	tokens.Spotify.TokenType = token.TokenType
 	WriteTokens(tokens)
 
 	client := authenticator.NewClient(token)

@@ -8,10 +8,10 @@ import (
 )
 
 type SpotifyTokens struct {
-	AccessToken string
+	AccessToken  string
 	RefreshToken string
-	Expiry string
-	TokenType string
+	Expiry       string
+	TokenType    string
 }
 
 type Tokens struct {

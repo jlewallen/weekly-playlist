@@ -1,16 +1,19 @@
 package main
 
 import (
+	"bytes"
+	"flag"
 	mapset "github.com/deckarep/golang-set"
 	fb "github.com/huandu/facebook"
 	"github.com/zmb3/spotify"
-    "flag"
-	"bytes"
-	"log"
 	"io"
+	"log"
+    "fmt"
 	"os"
 	"strings"
 	"time"
+    "net/url"
+    "regexp"
 )
 
 type Event struct {
@@ -49,10 +52,10 @@ func NewArtistResolver() (resolver *ArtistResolver) {
 	return resolver
 }
 
-func (resolver *ArtistResolver) SearchWithRetry(spotifyClient *spotify.Client, name string) (sr *spotify.SearchResult, err error) {
+func (resolver *ArtistResolver) SearchWithRetry(spotifyClient *spotify.Client, st spotify.SearchType, term string) (sr *spotify.SearchResult, err error) {
 	country := "US"
 	for {
-		sr, err = spotifyClient.SearchOpt(name, spotify.SearchTypeArtist, &spotify.Options{Country: &country})
+		sr, err = spotifyClient.SearchOpt(term, st, &spotify.Options{Country: &country})
 		if err != nil {
 			if !strings.Contains(err.Error(), "rate") {
 				break
@@ -73,7 +76,7 @@ func (resolver *ArtistResolver) GetSpotifyArtistsForGuess(spotifyClient *spotify
 	anyFound := false
 
 	if resolver.artistCache[artist.Name] == nil {
-		found, err := resolver.SearchWithRetry(spotifyClient, artist.Name)
+		found, err := resolver.SearchWithRetry(spotifyClient, spotify.SearchTypeArtist, artist.Name)
 		if err != nil {
 			log.Printf("Error:", err)
 		} else {
@@ -190,17 +193,130 @@ func MapIds(ids []spotify.ID) (ifaces []interface{}) {
 }
 
 type Options struct {
-    GuessOnly bool
-    RegionsFile string
+	GuessOnly    bool
+	EclecticOnly bool
+	RegionsFile  string
+}
+
+var nonLetters = regexp.MustCompile("[\\W\\D]")
+
+type PlaylistUpdate struct {
+    idsBefore mapset.Set
+    idsAfter []spotify.ID
+}
+
+func NewPlaylistUpdate(idsBefore []spotify.ID) (*PlaylistUpdate) {
+    return &PlaylistUpdate{
+        idsBefore: mapset.NewSetFromSlice(MapIds(idsBefore)),
+        idsAfter: make([]spotify.ID, 0),
+    }
+}
+
+func (pu *PlaylistUpdate) AddTrack(id spotify.ID) {
+    pu.idsAfter = append(pu.idsAfter, id)
+}
+
+func (pu *PlaylistUpdate) GetIdsToRemove() []spotify.ID {
+    afterSet := mapset.NewSetFromSlice(MapIds(pu.idsAfter))
+    idsToRemove := pu.idsBefore.Difference(afterSet)
+    return ToSpotifyIds(idsToRemove.ToSlice())
+}
+
+func (pu *PlaylistUpdate) GetIdsToAdd() []spotify.ID {
+    ids := make([]spotify.ID, 0)
+    for _, id := range pu.idsAfter {
+        if !pu.idsBefore.Contains(id) {
+            ids = append(ids, id)
+        }
+    }
+    return ids
+}
+
+func LooselyEqual(a string, b string) bool {
+    newA := nonLetters.ReplaceAllString(a, "")
+    newB := nonLetters.ReplaceAllString(b, "")
+    return strings.EqualFold(newA, newB)
+}
+
+func SameTrack(t PlaylistTrack, st spotify.FullTrack) bool {
+    if !LooselyEqual(t.Title, st.Name) {
+        log.Printf("   '%s' != '%s'", t.Title, st.Name)
+        return false
+    }
+    return true
+}
+
+func SelectTrack(t PlaylistTrack, tracks []spotify.FullTrack) *spotify.FullTrack {
+    for _, r := range tracks {
+        if SameTrack(t, r) {
+            log.Printf("   %s: %s - %s", r.ID, r.Artists[0].Name, r.Name)
+            return &r
+        }
+    }
+    return nil
+}
+
+func UpdateEclectic(spotifyClient *spotify.Client, e *Eclectic24) (bool, error) {
+    playlist, err := GetPlaylistByTitle(spotifyClient, "mbe")
+    if err != nil {
+        log.Fatalf("%v", err)
+    }
+
+    tracksBefore, _ := GetPlaylistTracks(spotifyClient, "jlewalle", playlist.ID)
+    idsBefore := GetTrackIds(GetFullTracks(tracksBefore))
+    update := NewPlaylistUpdate(idsBefore)
+
+    log.Printf("Before: %d", len(idsBefore))
+
+	ar := NewArtistResolver()
+
+	pl, err := NewPlaylistTracks(e.Show)
+	if err != nil {
+        return false, err
+	}
+
+    fmt.Printf("%v %v\n", len(*pl.Tracks), e.Show)
+
+	for _, track := range *pl.Tracks {
+        if track.AffiliateLinkSpotify != "" {
+
+            query, _ := url.QueryUnescape(track.AffiliateLinkSpotify)
+            query = strings.Replace(query, "spotify:search:", "", 1) 
+
+            log.Printf("%v - %s", track.Artist, track.Title)
+
+            f, err := ar.SearchWithRetry(spotifyClient, spotify.SearchTypeTrack, query)
+            if err != nil {
+                return false, err
+            }
+
+            sel := SelectTrack(track, f.Tracks.Tracks) 
+            if sel != nil {
+                update.AddTrack(sel.ID)
+            }
+        }
+	}
+
+    idsToAdd := update.GetIdsToAdd()
+    log.Printf("Adding %d tracks to %s", len(idsToAdd), playlist.ID)
+
+    for i := 0; i < len(idsToAdd); i += 50 {
+        batch := idsToAdd[i:min(i+50, len(idsToAdd))]
+        fmt.Printf("%v\n", batch)
+        spotifyClient.AddTracksToPlaylist("jlewalle", playlist.ID, batch...)
+    }
+
+	return len(idsToAdd) > 0 && len(*pl.Tracks) > 0, nil
 }
 
 func main() {
-    var options Options
+	var options Options
 
-    flag.BoolVar(&options.GuessOnly, "guess-only", false, "test guessing code only")
-    flag.StringVar(&options.RegionsFile, "regions-file", "regions.json", "json regions file to use")
+	flag.BoolVar(&options.GuessOnly, "guess-only", false, "test guessing code only")
+	flag.BoolVar(&options.EclecticOnly, "eclectic-only", false, "only update mbe playlist")
+	flag.StringVar(&options.RegionsFile, "regions-file", "regions.json", "json regions file to use")
 
-    flag.Parse()
+	flag.Parse()
 
 	logFile, err := os.OpenFile("weekly.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
@@ -217,78 +333,78 @@ func main() {
 	spotifyClient, _ := AuthenticateSpotify()
 	facebookSession, _ := AuthenticateFacebook()
 	regions := LoadRegions(options.RegionsFile)
-
 	artistsResolver := NewArtistResolver()
 
-	for _, region := range regions {
-		tracksAfter := []spotify.FullTrack{}
+	if !options.EclecticOnly {
+		for _, region := range regions {
+			tracksAfter := []spotify.FullTrack{}
 
-		for _, venueId := range region.VenueIds {
-			for _, event := range ProcessVenue(facebookSession, venueId) {
-				foundTracks := false
-				log.Printf("   '%s'\n", event.Name)
-				artists := artistsResolver.GetSpotifyArtists(spotifyClient, event)
-				for _, value := range artists {
-					artistTracks := artistsResolver.GetArtistTracks(spotifyClient, *value)
-					tracksAfter = append(tracksAfter, artistTracks...)
-					log.Printf("   %d tracks '%s'\n", len(artistTracks), value.Name)
-					foundTracks = true
+			for _, venueId := range region.VenueIds {
+				for _, event := range ProcessVenue(facebookSession, venueId) {
+					foundTracks := false
+					log.Printf("   '%s'\n", event.Name)
+					artists := artistsResolver.GetSpotifyArtists(spotifyClient, event)
+					for _, value := range artists {
+						artistTracks := artistsResolver.GetArtistTracks(spotifyClient, *value)
+						tracksAfter = append(tracksAfter, artistTracks...)
+						log.Printf("   %d tracks '%s'\n", len(artistTracks), value.Name)
+						foundTracks = true
+					}
+					if !foundTracks {
+						log.Printf("   NO TRACKS")
+					}
+
+					log.Printf("")
 				}
-				if !foundTracks {
-					log.Printf("   NO TRACKS")
+			}
+
+			if !options.GuessOnly {
+				idsAfter := GetTrackIds(tracksAfter)
+
+				playlist, err := GetPlaylistByTitle(spotifyClient, region.Region+" weekly")
+				if err != nil {
+					log.Printf("%v\n", err)
+					os.Exit(1)
+				}
+				tracksBefore, _ := GetPlaylistTracks(spotifyClient, "jlewalle", playlist.ID)
+				idsBefore := GetTrackIds(GetFullTracks(tracksBefore))
+                update := NewPlaylistUpdate(idsBefore)
+
+                for _, id := range idsAfter {
+                    update.AddTrack(id)
+                }
+
+				idsToAddSlice := update.GetIdsToAdd()
+				idsToRemoveSlice := update.GetIdsToRemove()
+
+				for i := 0; i < len(idsToRemoveSlice); i += 50 {
+					batch := idsToRemoveSlice[i:min(i+50, len(idsToRemoveSlice))]
+					spotifyClient.RemoveTracksFromPlaylist("jlewalle", playlist.ID, batch...)
 				}
 
-				log.Printf("")
+				for i := 0; i < len(idsToAddSlice); i += 50 {
+					batch := idsToAddSlice[i:min(i+50, len(idsToAddSlice))]
+					spotifyClient.AddTracksToPlaylist("jlewalle", playlist.ID, batch...)
+				}
 			}
 		}
 
-        if !options.GuessOnly {
-            idsAfter := GetTrackIds(tracksAfter)
-
-            playlist, err := GetPlaylistByTitle(spotifyClient, region.Region+" weekly")
-            if err != nil {
-                log.Printf("%v\n", err)
-                os.Exit(1)
-            }
-            tracksBefore, _ := GetPlaylistTracks(spotifyClient, "jlewalle", playlist.ID)
-            idsBefore := GetTrackIds(GetFullTracks(tracksBefore))
-
-            beforeSet := mapset.NewSetFromSlice(MapIds(idsBefore))
-            afterSet := mapset.NewSetFromSlice(MapIds(idsAfter))
-
-            idsToAdd := afterSet.Difference(beforeSet)
-            idsToRemove := beforeSet.Difference(afterSet)
-
-            idsToAddSlice := idsToAdd.ToSlice()
-            idsToRemoveSlice := idsToRemove.ToSlice()
-
-            log.Printf("%s before=%d after=%d adding=%d removing=%d\n",
-                playlist.Name,
-                len(tracksBefore),
-                len(tracksAfter),
-                len(idsToAddSlice),
-                len(idsToRemoveSlice))
-
-            for i := 0; i < len(idsToRemoveSlice); i += 50 {
-                batch := idsToRemoveSlice[i:min(i+50, len(idsToRemoveSlice))]
-                spotifyClient.RemoveTracksFromPlaylist("jlewalle", playlist.ID, ToSpotifyIds(batch)...)
-            }
-
-            orderedIdsToAdd := make([]spotify.ID, len(idsToAddSlice))
-            for _, i := range idsAfter {
-                if idsToAdd.Contains(i) {
-                    orderedIdsToAdd = append(orderedIdsToAdd, i)
-                }
-            }
-
-            for i := 0; i < len(orderedIdsToAdd); i += 50 {
-                batch := orderedIdsToAdd[i:min(i+50, len(orderedIdsToAdd))]
-                spotifyClient.AddTracksToPlaylist("jlewalle", playlist.ID, batch...)
-            }
-        }
+		if !options.GuessOnly {
+			SendEmail(buffer.String())
+		}
 	}
 
-    if !options.GuessOnly {
-        SendEmail(buffer.String())
+	e := NewEclectic24()
+    for {
+        again, err := UpdateEclectic(spotifyClient, e)
+        if err != nil {
+            log.Fatalf("%v\n", err)
+        }
+
+        if again {
+            e.PreviousShow()
+        } else {
+            break
+        }
     }
 }

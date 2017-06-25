@@ -1,14 +1,14 @@
 package main
 
 import (
-	"log"
 	"encoding/json"
 	"io/ioutil"
+	"log"
 )
 
 type Region struct {
-	Id string
-	Region string
+	Id       string
+	Region   string
 	VenueIds []string
 }
 

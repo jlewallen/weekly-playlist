@@ -2,14 +2,14 @@ package main
 
 import (
 	"fmt"
+	fb "github.com/huandu/facebook"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/facebook"
 	"log"
 	"net/http"
 	"net/url"
-	"strings"
-	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/facebook"
-	fb "github.com/huandu/facebook"
 	"os"
+	"strings"
 
 	"time"
 )
@@ -91,7 +91,7 @@ type FacebookEvents struct {
 
 type VenueInformation struct {
 	Name string
-	Id string
+	Id   string
 	Slug string
 }
 

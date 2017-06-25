@@ -1,11 +1,11 @@
 package main
 
 import (
-	"net/smtp"
 	"bytes"
-	"log"
-	"strconv"
 	"html/template"
+	"log"
+	"net/smtp"
+	"strconv"
 )
 
 type EmailUser struct {
@@ -16,7 +16,7 @@ type EmailUser struct {
 }
 
 type SmtpTemplateData struct {
-	From string
+	From    string
 	To      string
 	Subject string
 	Body    string
@@ -40,7 +40,7 @@ func SendEmail(info string) {
 
 	emailUser := &EmailUser{smtpUsername, smtpPassword, "smtp.gmail.com", 587}
 	auth := smtp.PlainAuth("", emailUser.Username, emailUser.Password, emailUser.EmailServer)
-	server := emailUser.EmailServer+":"+strconv.Itoa(emailUser.Port)
+	server := emailUser.EmailServer + ":" + strconv.Itoa(emailUser.Port)
 
 	err = smtp.SendMail(server, auth, emailUser.Username, []string{"jlewalle@gmail.com"}, msg)
 	if err != nil {
@@ -51,12 +51,12 @@ func SendEmail(info string) {
 func ParseTemplate(templateFileName string, data interface{}) (body string, err error) {
 	t, err := template.ParseFiles(templateFileName)
 	if err != nil {
-		return 
+		return
 	}
 	buf := new(bytes.Buffer)
 	if err = t.Execute(buf, data); err != nil {
-		return 
+		return
 	}
 	body = buf.String()
-	return 
+	return
 }
