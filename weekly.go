@@ -123,19 +123,32 @@ func (resolver *ArtistResolver) GetArtistTracks(spotifyClient *spotify.Client, a
 	return
 }
 
-func GetPlaylistByTitle(spotifyClient *spotify.Client, name string) (playlist spotify.SimplePlaylist, err error) {
-	playlists, err := spotifyClient.GetPlaylistsForUser("jlewalle")
-	if err == nil {
-		if playlists.Playlists != nil {
-			for _, iter := range playlists.Playlists {
-				if iter.Name == name {
-					playlist = iter
-				}
-			}
+func GetPlaylistByTitle(spotifyClient *spotify.Client, name string) (*spotify.SimplePlaylist, error) {
+	limit := 20
+	offset := 0
+	options := spotify.Options{Limit: &limit, Offset: &offset}
+	for {
+        playlists, err := spotifyClient.GetPlaylistsForUserOpt("jlewalle", &options)
+        if err != nil {
+            return nil, err
+        }
+
+        for _, iter := range playlists.Playlists {
+            // log.Printf("'%s' == '%s'", iter.Name, name)
+            if strings.EqualFold(iter.Name, name) {
+                return &iter, nil
+            }
+        }
+
+		if len(playlists.Playlists) < *options.Limit {
+			break
 		}
+
+		offset := *options.Limit + *options.Offset
+		options.Offset = &offset
 	}
 
-	return
+	return nil, nil
 }
 
 func GetPlaylistTracks(spotifyClient *spotify.Client, userId string, id spotify.ID) (allTracks []spotify.PlaylistTrack, err error) {
@@ -232,6 +245,12 @@ func (pu *PlaylistUpdate) GetIdsToAdd() []spotify.ID {
     return ids
 }
 
+func (pu *PlaylistUpdate) MergeBeforeAndToAdd() {
+    for _, id := range pu.idsAfter {
+        pu.idsBefore.Add(id)
+    }
+}
+
 func LooselyEqual(a string, b string) bool {
     newA := nonLetters.ReplaceAllString(a, "")
     newB := nonLetters.ReplaceAllString(b, "")
@@ -256,13 +275,41 @@ func SelectTrack(t PlaylistTrack, tracks []spotify.FullTrack) *spotify.FullTrack
     return nil
 }
 
-func UpdateEclectic(spotifyClient *spotify.Client, e *Eclectic24) (bool, error) {
-    playlist, err := GetPlaylistByTitle(spotifyClient, "mbe")
+func GetLastSunday(t time.Time) time.Time {
+	i := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+    for {
+        if i.Weekday() == time.Sunday {
+            return i
+        }
+        i = i.Add(-24 * time.Hour)
+    }
+}
+
+func UpdateEclectic(spotifyClient *spotify.Client, e *Eclectic24) (error) {
+    week := GetLastSunday(e.Show)
+    name := fmt.Sprintf("mbe %s", week.Format("06/01/02"))
+
+    log.Printf("Generating %v", name)
+    playlist, err := GetPlaylistByTitle(spotifyClient, name)
     if err != nil {
         log.Fatalf("%v", err)
     }
 
-    tracksBefore, _ := GetPlaylistTracks(spotifyClient, "jlewalle", playlist.ID)
+    var playlistId spotify.ID
+    if playlist == nil {
+        log.Printf("Creating %v", name)
+
+        created, err := spotifyClient.CreatePlaylistForUser("jlewalle", name, true)
+        if err != nil {
+            log.Fatalf("%v", err)
+        }
+
+        playlistId = created.ID
+    } else {
+        playlistId = playlist.ID
+    }
+
+    tracksBefore, _ := GetPlaylistTracks(spotifyClient, "jlewalle", playlistId)
     idsBefore := GetTrackIds(GetFullTracks(tracksBefore))
     update := NewPlaylistUpdate(idsBefore)
 
@@ -270,43 +317,59 @@ func UpdateEclectic(spotifyClient *spotify.Client, e *Eclectic24) (bool, error) 
 
 	ar := NewArtistResolver()
 
-	pl, err := NewPlaylistTracks(e.Show)
-	if err != nil {
-        return false, err
-	}
+    for {
+        pl, err := NewPlaylistTracks(e.Show)
+        if err != nil {
+            return err
+        }
 
-    fmt.Printf("%v %v\n", len(*pl.Tracks), e.Show)
+        fmt.Printf("%v %v\n", len(*pl.Tracks), e.Show)
 
-	for _, track := range *pl.Tracks {
-        if track.AffiliateLinkSpotify != "" {
+        for _, track := range *pl.Tracks {
+            if track.AffiliateLinkSpotify != "" {
 
-            query, _ := url.QueryUnescape(track.AffiliateLinkSpotify)
-            query = strings.Replace(query, "spotify:search:", "", 1) 
+                query, _ := url.QueryUnescape(track.AffiliateLinkSpotify)
+                query = strings.Replace(query, "spotify:search:", "", 1) 
 
-            log.Printf("%v - %s", track.Artist, track.Title)
+                log.Printf("%v - %s", track.Artist, track.Title)
 
-            f, err := ar.SearchWithRetry(spotifyClient, spotify.SearchTypeTrack, query)
-            if err != nil {
-                return false, err
-            }
+                f, err := ar.SearchWithRetry(spotifyClient, spotify.SearchTypeTrack, query)
+                if err != nil {
+                    return err
+                }
 
-            sel := SelectTrack(track, f.Tracks.Tracks) 
-            if sel != nil {
-                update.AddTrack(sel.ID)
+                sel := SelectTrack(track, f.Tracks.Tracks) 
+                if sel != nil {
+                    update.AddTrack(sel.ID)
+                }
             }
         }
-	}
 
-    idsToAdd := update.GetIdsToAdd()
-    log.Printf("Adding %d tracks to %s", len(idsToAdd), playlist.ID)
+        idsToAdd := update.GetIdsToAdd()
+        log.Printf("Adding %d tracks to %s", len(idsToAdd), playlistId)
 
-    for i := 0; i < len(idsToAdd); i += 50 {
-        batch := idsToAdd[i:min(i+50, len(idsToAdd))]
-        fmt.Printf("%v\n", batch)
-        spotifyClient.AddTracksToPlaylist("jlewalle", playlist.ID, batch...)
+        for i := 0; i < len(idsToAdd); i += 50 {
+            batch := idsToAdd[i:min(i+50, len(idsToAdd))]
+            spotifyClient.AddTracksToPlaylist("jlewalle", playlistId, batch...)
+        }
+
+        update.MergeBeforeAndToAdd()
+
+        again := len(idsToAdd) > 0 && len(*pl.Tracks) > 0
+        if !again {
+            log.Printf("No new tracks, done")
+            return nil
+        }
+
+        e.PreviousShow()
+
+        if GetLastSunday(e.Show) != week {
+            log.Printf("Got to the beginning of the week, done")
+            return nil
+        }
     }
 
-	return len(idsToAdd) > 0 && len(*pl.Tracks) > 0, nil
+	return nil
 }
 
 func main() {
@@ -395,16 +458,8 @@ func main() {
 	}
 
 	e := NewEclectic24()
-    for {
-        again, err := UpdateEclectic(spotifyClient, e)
-        if err != nil {
-            log.Fatalf("%v\n", err)
-        }
-
-        if again {
-            e.PreviousShow()
-        } else {
-            break
-        }
+    err = UpdateEclectic(spotifyClient, e)
+    if err != nil {
+        log.Fatalf("%v\n", err)
     }
 }
