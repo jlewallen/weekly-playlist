@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	authenticator = spotify.NewAuthenticator(spotifyRedirectUrl, spotify.ScopeUserReadPrivate)
+	authenticator = spotify.NewAuthenticator(spotifyRedirectUrl, spotify.ScopePlaylistModifyPrivate, spotify.ScopePlaylistModifyPublic, spotify.ScopeUserLibraryModify, spotify.ScopeUserReadPrivate)
 	clientChannel = make(chan *spotify.Client)
 )
 
@@ -21,9 +21,6 @@ func AuthenticateSpotify() (spotifyClient *spotify.Client, err error) {
 
 	if tokens.Spotify.AccessToken == "" {
 		http.HandleFunc("/spotify/callback", CompleteAuth)
-		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			log.Println("Got request for:", r.URL.String())
-		})
 		go http.ListenAndServe(":9090", nil)
 
 		authenticator.SetAuthInfo(spotifyClientId, spotifyClientSecret)
