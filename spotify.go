@@ -1,12 +1,14 @@
 package main
 
 import (
-	"github.com/zmb3/spotify"
-	"golang.org/x/oauth2"
+	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"time"
+
+	"golang.org/x/oauth2"
+
+	"github.com/zmb3/spotify"
 )
 
 var (
@@ -42,9 +44,7 @@ func AuthenticateSpotify() (spotifyClient *spotify.Client, err error) {
 
 	user, err := spotifyClient.CurrentUser()
 	if err != nil {
-		log.Printf("Error: %v\n", err)
-		os.Exit(1)
-		return
+		return nil, fmt.Errorf("%v", err)
 	}
 
 	log.Println("spotify: You are logged in as", user.ID)

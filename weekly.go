@@ -392,11 +392,12 @@ func main() {
 	log.SetOutput(multi)
 
 	spotifyClient, _ := AuthenticateSpotify()
-	facebookSession, _ := AuthenticateFacebook()
-	regions := LoadRegions(options.RegionsFile)
 	artistsResolver := NewArtistResolver()
 
 	if !options.EclecticOnly {
+		facebookSession, _ := AuthenticateFacebook()
+		regions := LoadRegions(options.RegionsFile)
+
 		for _, region := range regions {
 			title := region.Region + " weekly"
 			playlist, err := GetPlaylistByTitle(spotifyClient, title)
