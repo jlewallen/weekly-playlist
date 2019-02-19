@@ -2,9 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"time"
-    "log"
 )
 
 type PlaylistTrack struct {
@@ -53,10 +53,10 @@ type PlaylistTracks struct {
 
 func NewPlaylistTracks(show time.Time) (*PlaylistTracks, error) {
 	search := show.Format("2006/01/02?time=15:04")
-    url := "http://tracklist-api.kcrw.com/Music/date/" + search
-    if false {
-        log.Printf("%s", url)
-    }
+	url := "http://tracklist-api.kcrw.com/Music/date/" + search
+	if false {
+		log.Printf("%s", url)
+	}
 	r, err := http.Get(url)
 	if err != nil {
 		return nil, err
