@@ -179,7 +179,7 @@ func UpdateEclectic(spotifyClient *spotify.Client, e *Eclectic24) error {
 	name := fmt.Sprintf("mbe %s", week.Format("06/01/02"))
 
 	log.Printf("Generating %v", name)
-	playlist, err := GetPlaylistByTitle(spotifyClient, "", name)
+	playlist, err := GetPlaylistByTitle(spotifyClient, "jlewalle", name)
 	if err != nil {
 		log.Fatalf("Unable to get playlist: %v", err)
 	}
